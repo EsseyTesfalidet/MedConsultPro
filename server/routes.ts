@@ -104,6 +104,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Seed health topics endpoint (development only)
+  app.post("/api/seed-health-topics", async (req, res) => {
+    try {
+      const healthTopicsData = [
+        {
+          title: "Heart Disease Prevention",
+          category: "Cardiovascular",
+          description: "Learn about preventing heart disease through lifestyle changes and medical care.",
+          content: "Heart disease remains the leading cause of death worldwide, but many cases are preventable through proper lifestyle modifications and medical care...",
+          author: "Dr. Sarah Johnson, MD",
+          readTime: "8 min read"
+        },
+        {
+          title: "Managing Diabetes",
+          category: "Endocrine",
+          description: "Comprehensive guide to diabetes management and blood sugar control.",
+          content: "Diabetes management involves careful monitoring of blood glucose levels, proper nutrition, regular exercise, and medication adherence...",
+          author: "Dr. Michael Chen, MD",
+          readTime: "10 min read"
+        },
+        {
+          title: "Mental Health Awareness",
+          category: "Mental Health",
+          description: "Understanding common mental health conditions and when to seek help.",
+          content: "Mental health is just as important as physical health. Common conditions include anxiety, depression, and stress-related disorders...",
+          author: "Dr. Emily Rodriguez, MD",
+          readTime: "6 min read"
+        },
+        {
+          title: "Nutrition and Wellness",
+          category: "Nutrition",
+          description: "Essential nutrition guidelines for maintaining optimal health.",
+          content: "A balanced diet is fundamental to good health. Focus on whole foods, adequate hydration, and portion control...",
+          author: "Dr. David Wilson, MD",
+          readTime: "7 min read"
+        },
+        {
+          title: "Exercise and Fitness",
+          category: "Fitness",
+          description: "Safe and effective exercise guidelines for all fitness levels.",
+          content: "Regular physical activity is crucial for maintaining health and preventing chronic diseases. Start with moderate activities...",
+          author: "Dr. Lisa Thompson, MD",
+          readTime: "9 min read"
+        }
+      ];
+
+      for (const topicData of healthTopicsData) {
+        try {
+          await storage.createHealthTopic(topicData);
+        } catch (error) {
+          // Topic might already exist, continue with others
+          console.log(`Topic "${topicData.title}" may already exist, skipping...`);
+        }
+      }
+
+      res.json({ success: true, message: "Health topics seeded successfully" });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to seed health topics" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

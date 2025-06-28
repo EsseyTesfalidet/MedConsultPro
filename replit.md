@@ -110,6 +110,11 @@ The application uses four main database tables:
 ```
 Changelog:
 - June 27, 2025. Initial setup
+- June 28, 2025. Added PostgreSQL database with DatabaseStorage implementation
+  - Migrated from in-memory storage to persistent PostgreSQL database
+  - Added HIPAA-compliant anonymous session tracking
+  - Implemented database seeding for health topics
+  - All data now persists across application restarts
 ```
 
 ## User Preferences

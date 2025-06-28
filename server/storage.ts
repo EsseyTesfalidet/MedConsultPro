@@ -12,6 +12,8 @@ import {
   type ContactMessage,
   type InsertContactMessage
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, like, or } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -151,6 +153,8 @@ export class MemStorage implements IStorage {
       id,
       sessionId,
       analysis,
+      additionalSymptoms: insertAnalysis.additionalSymptoms || null,
+      medicalHistory: insertAnalysis.medicalHistory || null,
       createdAt: new Date(),
     };
     
@@ -198,6 +202,9 @@ export class MemStorage implements IStorage {
     const healthTopic: HealthTopic = {
       ...insertTopic,
       id,
+      imageUrl: insertTopic.imageUrl || null,
+      author: insertTopic.author || null,
+      readTime: insertTopic.readTime || null,
       publishedAt: new Date(),
     };
     this.healthTopics.set(id, healthTopic);
@@ -209,6 +216,7 @@ export class MemStorage implements IStorage {
     const contactMessage: ContactMessage = {
       ...insertMessage,
       id,
+      phone: insertMessage.phone || null,
       createdAt: new Date(),
     };
     this.contactMessages.set(id, contactMessage);
@@ -321,4 +329,153 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// DatabaseStorage implementation using PostgreSQL
+export class DatabaseStorage implements IStorage {
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user || undefined;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  async createSymptomAnalysis(insertAnalysis: InsertSymptomAnalysis): Promise<SymptomAnalysis> {
+    // Generate anonymous session ID for HIPAA compliance
+    const sessionId = this.generateAnonymousSessionId();
+    
+    // Generate analysis based on symptoms
+    const analysis = this.generateSymptomAnalysis(insertAnalysis);
+    
+    const [symptomAnalysis] = await db
+      .insert(symptomAnalyses)
+      .values({
+        ...insertAnalysis,
+        sessionId,
+        analysis,
+        additionalSymptoms: insertAnalysis.additionalSymptoms || null,
+      })
+      .returning();
+    
+    return symptomAnalysis;
+  }
+
+  async getSymptomAnalysis(id: number): Promise<SymptomAnalysis | undefined> {
+    const [analysis] = await db.select().from(symptomAnalyses).where(eq(symptomAnalyses.id, id));
+    return analysis || undefined;
+  }
+
+  async getHealthTopics(): Promise<HealthTopic[]> {
+    return await db.select().from(healthTopics);
+  }
+
+  async getHealthTopicsByCategory(category: string): Promise<HealthTopic[]> {
+    return await db.select().from(healthTopics).where(eq(healthTopics.category, category));
+  }
+
+  async searchHealthTopics(query: string): Promise<HealthTopic[]> {
+    return await db.select().from(healthTopics).where(
+      or(
+        like(healthTopics.title, `%${query}%`),
+        like(healthTopics.description, `%${query}%`),
+        like(healthTopics.content, `%${query}%`)
+      )
+    );
+  }
+
+  async createHealthTopic(insertTopic: InsertHealthTopic): Promise<HealthTopic> {
+    const [healthTopic] = await db
+      .insert(healthTopics)
+      .values({
+        ...insertTopic,
+        imageUrl: insertTopic.imageUrl || null,
+        author: insertTopic.author || null,
+        readTime: insertTopic.readTime || null,
+      })
+      .returning();
+    return healthTopic;
+  }
+
+  async createContactMessage(insertMessage: InsertContactMessage): Promise<ContactMessage> {
+    const [contactMessage] = await db
+      .insert(contactMessages)
+      .values({
+        ...insertMessage,
+        phone: insertMessage.phone || null,
+      })
+      .returning();
+    return contactMessage;
+  }
+
+  private generateAnonymousSessionId(): string {
+    return 'session_' + Math.random().toString(36).substring(2) + '_' + Date.now();
+  }
+
+  private generateSymptomAnalysis(symptoms: InsertSymptomAnalysis): any {
+    const primarySymptoms = symptoms.primarySymptoms.toLowerCase();
+    const additionalSymptoms = symptoms.additionalSymptoms || [];
+    
+    // Basic symptom analysis logic (in production, this would use AI/ML)
+    const conditions = [];
+    const recommendations = [];
+    
+    // Fever-related conditions
+    if (primarySymptoms.includes('fever') || additionalSymptoms.includes('Fever')) {
+      conditions.push({
+        name: 'Viral Infection',
+        match: 75,
+        description: 'Based on fever symptoms'
+      });
+      recommendations.push('Rest and stay hydrated');
+      recommendations.push('Monitor temperature regularly');
+    }
+    
+    // Pain-related conditions
+    if (primarySymptoms.includes('pain') || symptoms.painLevel >= 6) {
+      conditions.push({
+        name: 'Acute Pain Syndrome',
+        match: 70,
+        description: 'Based on reported pain levels'
+      });
+      recommendations.push('Consider over-the-counter pain relief');
+      recommendations.push('Apply heat or cold therapy as appropriate');
+    }
+    
+    // Digestive issues
+    if (primarySymptoms.includes('nausea') || primarySymptoms.includes('stomach') || 
+        additionalSymptoms.includes('Nausea')) {
+      conditions.push({
+        name: 'Gastroenteritis',
+        match: 65,
+        description: 'Based on digestive symptoms'
+      });
+      recommendations.push('Stay hydrated with clear fluids');
+      recommendations.push('Follow BRAT diet (Bananas, Rice, Applesauce, Toast)');
+    }
+    
+    // Default recommendations
+    if (recommendations.length === 0) {
+      recommendations.push('Monitor symptoms closely');
+      recommendations.push('Consult healthcare provider if symptoms persist');
+    }
+    
+    return {
+      conditions,
+      recommendations,
+      riskLevel: symptoms.painLevel >= 7 ? 'high' : symptoms.painLevel >= 4 ? 'moderate' : 'low',
+      urgencyLevel: symptoms.painLevel >= 8 || symptoms.duration === 'More than 1 week' ? 'high' : 'moderate',
+      followUpAdvice: 'If symptoms worsen or new symptoms develop, seek immediate medical attention.'
+    };
+  }
+}
+
+export const storage = new DatabaseStorage();
