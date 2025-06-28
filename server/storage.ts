@@ -140,17 +140,28 @@ export class MemStorage implements IStorage {
   async createSymptomAnalysis(insertAnalysis: InsertSymptomAnalysis): Promise<SymptomAnalysis> {
     const id = this.currentAnalysisId++;
     
+    // Generate anonymous session ID for HIPAA compliance
+    const sessionId = this.generateAnonymousSessionId();
+    
     // Generate basic analysis based on symptoms
     const analysis = this.generateSymptomAnalysis(insertAnalysis);
     
     const symptomAnalysis: SymptomAnalysis = {
       ...insertAnalysis,
       id,
+      sessionId,
       analysis,
       createdAt: new Date(),
     };
     
+    // Store temporarily for session only - automatically clean up after 24 hours
     this.symptomAnalyses.set(id, symptomAnalysis);
+    
+    // Schedule cleanup (in production, use proper job scheduling)
+    setTimeout(() => {
+      this.symptomAnalyses.delete(id);
+    }, 24 * 60 * 60 * 1000); // 24 hours
+    
     return symptomAnalysis;
   }
 
@@ -202,6 +213,10 @@ export class MemStorage implements IStorage {
     };
     this.contactMessages.set(id, contactMessage);
     return contactMessage;
+  }
+
+  private generateAnonymousSessionId(): string {
+    return 'session_' + Math.random().toString(36).substring(2) + '_' + Date.now();
   }
 
   private generateSymptomAnalysis(symptoms: InsertSymptomAnalysis): any {

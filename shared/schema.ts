@@ -18,6 +18,7 @@ export const symptomAnalyses = pgTable("symptom_analyses", {
   additionalSymptoms: text("additional_symptoms").array(),
   medicalHistory: text("medical_history"),
   analysis: jsonb("analysis"),
+  sessionId: text("session_id"), // Anonymous session tracking only
   createdAt: timestamp("created_at").defaultNow(),
 });
 

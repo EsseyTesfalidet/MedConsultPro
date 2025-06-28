@@ -1,4 +1,5 @@
 import { Stethoscope, Phone, Mail, Clock } from "lucide-react";
+import { Link } from "wouter";
 
 export default function Footer() {
   const services = [
@@ -85,7 +86,12 @@ export default function Footer() {
             © 2024 MedConsult Pro. All rights reserved. | HIPAA Compliant | Licensed Medical Professionals
           </p>
           <div className="flex space-x-6 mt-4 md:mt-0">
-            {legalLinks.map((link, index) => (
+            <Link href="/terms">
+              <button className="text-gray-400 hover:text-white transition-colors text-sm">
+                Terms & Refund Policy
+              </button>
+            </Link>
+            {legalLinks.slice(0, 2).map((link, index) => (
               <button
                 key={index}
                 className="text-gray-400 hover:text-white transition-colors text-sm"
