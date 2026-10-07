@@ -15,6 +15,154 @@ import {
 import { db } from "./db";
 import { eq, like, or } from "drizzle-orm";
 
+type ConditionMatch = {
+  name: string;
+  match: number;
+  description: string;
+};
+
+type SymptomInsights = {
+  possibleConditions: ConditionMatch[];
+  recommendations: string[];
+  urgencyLevel: "high" | "moderate" | "low";
+  followUpAdvice: string;
+  riskLevel: "high" | "moderate" | "low";
+};
+
+function generateAnonymousSessionId(): string {
+  return `session_${Math.random().toString(36).substring(2)}_${Date.now()}`;
+}
+
+function generateSymptomInsights(
+  symptoms: InsertSymptomAnalysis,
+): SymptomInsights {
+  const primarySymptoms = symptoms.primarySymptoms.toLowerCase();
+  const additionalSymptoms = symptoms.additionalSymptoms ?? [];
+  const normalizedAdditional = additionalSymptoms.map((symptom) =>
+    symptom.toLowerCase(),
+  );
+
+  const includesAdditional = (symptom: string) =>
+    normalizedAdditional.includes(symptom.toLowerCase());
+
+  const conditions: ConditionMatch[] = [];
+  const recommendations: string[] = [];
+
+  if (
+    primarySymptoms.includes("runny nose") ||
+    primarySymptoms.includes("cough") ||
+    primarySymptoms.includes("sore throat") ||
+    includesAdditional("fever")
+  ) {
+    conditions.push({
+      name: "Common Cold",
+      match: 75,
+      description: "Based on symptoms: runny nose, mild fever, fatigue",
+    });
+    recommendations.push("Get plenty of rest and stay hydrated");
+    recommendations.push("Consider over-the-counter pain relievers");
+    recommendations.push("Monitor symptoms for 3-5 days");
+  }
+
+  if (primarySymptoms.includes("headache")) {
+    if (symptoms.painLevel >= 7) {
+      conditions.push({
+        name: "Severe Headache/Migraine",
+        match: 80,
+        description: "Based on high pain level and headache symptoms",
+      });
+      recommendations.push("Rest in a dark, quiet room");
+      recommendations.push("Apply cold or warm compress");
+      recommendations.push("Consider prescribed migraine medication");
+    } else {
+      conditions.push({
+        name: "Tension Headache",
+        match: 70,
+        description: "Based on moderate headache symptoms",
+      });
+      recommendations.push("Practice stress management techniques");
+      recommendations.push("Ensure adequate hydration");
+      recommendations.push("Consider over-the-counter pain relievers");
+    }
+  }
+
+  if (
+    includesAdditional("fever") &&
+    includesAdditional("fatigue") &&
+    (primarySymptoms.includes("body ache") ||
+      primarySymptoms.includes("muscle pain"))
+  ) {
+    conditions.push({
+      name: "Influenza (Flu)",
+      match: 85,
+      description: "Based on fever, fatigue, and body aches",
+    });
+    recommendations.push("Get plenty of rest");
+    recommendations.push("Stay hydrated with fluids");
+    recommendations.push(
+      "Consider antiviral medication if within 48 hours of symptom onset",
+    );
+  }
+
+  if (
+    primarySymptoms.includes("nausea") ||
+    primarySymptoms.includes("stomach") ||
+    includesAdditional("nausea")
+  ) {
+    conditions.push({
+      name: "Gastroenteritis",
+      match: 65,
+      description: "Based on digestive symptoms",
+    });
+    recommendations.push("Stay hydrated with clear fluids");
+    recommendations.push("Follow BRAT diet (Bananas, Rice, Applesauce, Toast)");
+    recommendations.push("Avoid dairy and fatty foods");
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push("Monitor symptoms closely");
+    recommendations.push("Stay hydrated and get adequate rest");
+    recommendations.push(
+      "Consider over-the-counter symptom relief as appropriate",
+    );
+  }
+
+  if (symptoms.duration === "More than 1 week" || symptoms.painLevel >= 8) {
+    recommendations.push("Consult a healthcare provider promptly");
+  } else {
+    recommendations.push("Consult a doctor if symptoms worsen or persist");
+  }
+
+  if (conditions.length === 0) {
+    conditions.push({
+      name: "General Symptoms",
+      match: 50,
+      description: "Symptoms require further evaluation",
+    });
+  }
+
+  const urgencyLevel =
+    symptoms.painLevel >= 8 || symptoms.duration === "More than 1 week"
+      ? "high"
+      : "moderate";
+
+  const riskLevel =
+    symptoms.painLevel >= 8
+      ? "high"
+      : symptoms.painLevel >= 4
+        ? "moderate"
+        : "low";
+
+  return {
+    possibleConditions: conditions,
+    recommendations,
+    urgencyLevel,
+    followUpAdvice:
+      "If symptoms worsen or new symptoms develop, seek immediate medical attention.",
+    riskLevel,
+  };
+}
+
 export interface IStorage {
   // User methods
   getUser(id: number): Promise<User | undefined>;
@@ -143,10 +291,10 @@ export class MemStorage implements IStorage {
     const id = this.currentAnalysisId++;
     
     // Generate anonymous session ID for HIPAA compliance
-    const sessionId = this.generateAnonymousSessionId();
-    
+    const sessionId = generateAnonymousSessionId();
+
     // Generate basic analysis based on symptoms
-    const analysis = this.generateSymptomAnalysis(insertAnalysis);
+    const analysis = generateSymptomInsights(insertAnalysis);
     
     const symptomAnalysis: SymptomAnalysis = {
       ...insertAnalysis,
@@ -223,126 +371,25 @@ export class MemStorage implements IStorage {
     return contactMessage;
   }
 
-  private generateAnonymousSessionId(): string {
-    return 'session_' + Math.random().toString(36).substring(2) + '_' + Date.now();
-  }
-
-  private generateSymptomAnalysis(symptoms: InsertSymptomAnalysis): any {
-    const primarySymptoms = symptoms.primarySymptoms.toLowerCase();
-    const additionalSymptoms = symptoms.additionalSymptoms || [];
-    
-    // Basic symptom matching logic
-    const conditions: Array<{ name: string; match: number; description: string }> = [];
-    const recommendations: string[] = [];
-
-    // Common cold symptoms
-    if (primarySymptoms.includes('runny nose') || primarySymptoms.includes('cough') || 
-        primarySymptoms.includes('sore throat') || additionalSymptoms.includes('Fever')) {
-      conditions.push({
-        name: 'Common Cold',
-        match: 75,
-        description: 'Based on symptoms: runny nose, mild fever, fatigue'
-      });
-      recommendations.push('Get plenty of rest and stay hydrated');
-      recommendations.push('Consider over-the-counter pain relievers');
-      recommendations.push('Monitor symptoms for 3-5 days');
-    }
-
-    // Headache-related conditions
-    if (primarySymptoms.includes('headache')) {
-      if (symptoms.painLevel >= 7) {
-        conditions.push({
-          name: 'Severe Headache/Migraine',
-          match: 80,
-          description: 'Based on high pain level and headache symptoms'
-        });
-        recommendations.push('Rest in a dark, quiet room');
-        recommendations.push('Apply cold or warm compress');
-        recommendations.push('Consider prescribed migraine medication');
-      } else {
-        conditions.push({
-          name: 'Tension Headache',
-          match: 70,
-          description: 'Based on moderate headache symptoms'
-        });
-        recommendations.push('Practice stress management techniques');
-        recommendations.push('Ensure adequate hydration');
-        recommendations.push('Consider over-the-counter pain relievers');
-      }
-    }
-
-    // Flu-like symptoms
-    if (additionalSymptoms.includes('Fever') && additionalSymptoms.includes('Fatigue') && 
-        (primarySymptoms.includes('body ache') || primarySymptoms.includes('muscle pain'))) {
-      conditions.push({
-        name: 'Influenza (Flu)',
-        match: 85,
-        description: 'Based on fever, fatigue, and body aches'
-      });
-      recommendations.push('Get plenty of rest');
-      recommendations.push('Stay hydrated with fluids');
-      recommendations.push('Consider antiviral medication if within 48 hours of symptom onset');
-    }
-
-    // Digestive issues
-    if (primarySymptoms.includes('nausea') || primarySymptoms.includes('stomach') || 
-        additionalSymptoms.includes('Nausea')) {
-      conditions.push({
-        name: 'Gastroenteritis',
-        match: 65,
-        description: 'Based on digestive symptoms'
-      });
-      recommendations.push('Stay hydrated with clear fluids');
-      recommendations.push('Follow BRAT diet (Bananas, Rice, Applesauce, Toast)');
-      recommendations.push('Avoid dairy and fatty foods');
-    }
-
-    // Default recommendations
-    if (recommendations.length === 0) {
-      recommendations.push('Monitor symptoms closely');
-      recommendations.push('Stay hydrated and get adequate rest');
-      recommendations.push('Consider over-the-counter symptom relief as appropriate');
-    }
-
-    // Always add medical consultation recommendation for persistent symptoms
-    if (symptoms.duration === 'More than 1 week' || symptoms.painLevel >= 8) {
-      recommendations.push('Consult a healthcare provider promptly');
-    } else {
-      recommendations.push('Consult a doctor if symptoms worsen or persist');
-    }
-
-    // Default condition if none matched
-    if (conditions.length === 0) {
-      conditions.push({
-        name: 'General Symptoms',
-        match: 50,
-        description: 'Symptoms require further evaluation'
-      });
-    }
-
-    return {
-      possibleConditions: conditions,
-      recommendations,
-      urgencyLevel: symptoms.painLevel >= 8 || symptoms.duration === 'More than 1 week' ? 'high' : 'moderate',
-      followUpAdvice: 'If symptoms worsen or new symptoms develop, seek immediate medical attention.'
-    };
-  }
 }
 
 // DatabaseStorage implementation using PostgreSQL
 export class DatabaseStorage implements IStorage {
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
+    const database = db!;
+    const [user] = await database.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    const database = db!;
+    const [user] = await database.select().from(users).where(eq(users.username, username));
     return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db
+    const database = db!;
+    const [user] = await database
       .insert(users)
       .values(insertUser)
       .returning();
@@ -351,39 +398,45 @@ export class DatabaseStorage implements IStorage {
 
   async createSymptomAnalysis(insertAnalysis: InsertSymptomAnalysis): Promise<SymptomAnalysis> {
     // Generate anonymous session ID for HIPAA compliance
-    const sessionId = this.generateAnonymousSessionId();
-    
+    const sessionId = generateAnonymousSessionId();
+
     // Generate analysis based on symptoms
-    const analysis = this.generateSymptomAnalysis(insertAnalysis);
+    const analysis = generateSymptomInsights(insertAnalysis);
     
-    const [symptomAnalysis] = await db
+    const database = db!;
+    const [symptomAnalysis] = await database
       .insert(symptomAnalyses)
       .values({
         ...insertAnalysis,
         sessionId,
         analysis,
         additionalSymptoms: insertAnalysis.additionalSymptoms || null,
+        medicalHistory: insertAnalysis.medicalHistory || null,
       })
       .returning();
-    
+
     return symptomAnalysis;
   }
 
   async getSymptomAnalysis(id: number): Promise<SymptomAnalysis | undefined> {
-    const [analysis] = await db.select().from(symptomAnalyses).where(eq(symptomAnalyses.id, id));
+    const database = db!;
+    const [analysis] = await database.select().from(symptomAnalyses).where(eq(symptomAnalyses.id, id));
     return analysis || undefined;
   }
 
   async getHealthTopics(): Promise<HealthTopic[]> {
-    return await db.select().from(healthTopics);
+    const database = db!;
+    return await database.select().from(healthTopics);
   }
 
   async getHealthTopicsByCategory(category: string): Promise<HealthTopic[]> {
-    return await db.select().from(healthTopics).where(eq(healthTopics.category, category));
+    const database = db!;
+    return await database.select().from(healthTopics).where(eq(healthTopics.category, category));
   }
 
   async searchHealthTopics(query: string): Promise<HealthTopic[]> {
-    return await db.select().from(healthTopics).where(
+    const database = db!;
+    return await database.select().from(healthTopics).where(
       or(
         like(healthTopics.title, `%${query}%`),
         like(healthTopics.description, `%${query}%`),
@@ -393,7 +446,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createHealthTopic(insertTopic: InsertHealthTopic): Promise<HealthTopic> {
-    const [healthTopic] = await db
+    const database = db!;
+    const [healthTopic] = await database
       .insert(healthTopics)
       .values({
         ...insertTopic,
@@ -406,7 +460,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createContactMessage(insertMessage: InsertContactMessage): Promise<ContactMessage> {
-    const [contactMessage] = await db
+    const database = db!;
+    const [contactMessage] = await database
       .insert(contactMessages)
       .values({
         ...insertMessage,
@@ -416,66 +471,10 @@ export class DatabaseStorage implements IStorage {
     return contactMessage;
   }
 
-  private generateAnonymousSessionId(): string {
-    return 'session_' + Math.random().toString(36).substring(2) + '_' + Date.now();
-  }
-
-  private generateSymptomAnalysis(symptoms: InsertSymptomAnalysis): any {
-    const primarySymptoms = symptoms.primarySymptoms.toLowerCase();
-    const additionalSymptoms = symptoms.additionalSymptoms || [];
-    
-    // Basic symptom analysis logic (in production, this would use AI/ML)
-    const conditions = [];
-    const recommendations = [];
-    
-    // Fever-related conditions
-    if (primarySymptoms.includes('fever') || additionalSymptoms.includes('Fever')) {
-      conditions.push({
-        name: 'Viral Infection',
-        match: 75,
-        description: 'Based on fever symptoms'
-      });
-      recommendations.push('Rest and stay hydrated');
-      recommendations.push('Monitor temperature regularly');
-    }
-    
-    // Pain-related conditions
-    if (primarySymptoms.includes('pain') || symptoms.painLevel >= 6) {
-      conditions.push({
-        name: 'Acute Pain Syndrome',
-        match: 70,
-        description: 'Based on reported pain levels'
-      });
-      recommendations.push('Consider over-the-counter pain relief');
-      recommendations.push('Apply heat or cold therapy as appropriate');
-    }
-    
-    // Digestive issues
-    if (primarySymptoms.includes('nausea') || primarySymptoms.includes('stomach') || 
-        additionalSymptoms.includes('Nausea')) {
-      conditions.push({
-        name: 'Gastroenteritis',
-        match: 65,
-        description: 'Based on digestive symptoms'
-      });
-      recommendations.push('Stay hydrated with clear fluids');
-      recommendations.push('Follow BRAT diet (Bananas, Rice, Applesauce, Toast)');
-    }
-    
-    // Default recommendations
-    if (recommendations.length === 0) {
-      recommendations.push('Monitor symptoms closely');
-      recommendations.push('Consult healthcare provider if symptoms persist');
-    }
-    
-    return {
-      conditions,
-      recommendations,
-      riskLevel: symptoms.painLevel >= 7 ? 'high' : symptoms.painLevel >= 4 ? 'moderate' : 'low',
-      urgencyLevel: symptoms.painLevel >= 8 || symptoms.duration === 'More than 1 week' ? 'high' : 'moderate',
-      followUpAdvice: 'If symptoms worsen or new symptoms develop, seek immediate medical attention.'
-    };
-  }
 }
 
-export const storage = new DatabaseStorage();
+const storage: IStorage = process.env.DATABASE_URL
+  ? new DatabaseStorage()
+  : new MemStorage();
+
+export { storage };

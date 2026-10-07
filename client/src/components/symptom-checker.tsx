@@ -283,6 +283,7 @@ export default function SymptomChecker() {
                           placeholder="Any chronic conditions, recent surgeries, medications, or allergies"
                           className="h-24"
                           {...field}
+                          value={field.value ?? ""}
                         />
                       </FormControl>
                       <FormMessage />
